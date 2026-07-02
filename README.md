@@ -136,7 +136,7 @@ Trong kỷ nguyên Conway, Cardano gộp việc đăng ký khóa stake, ủy quy
     *   Hệ thống gọi API Blockfrost để kiểm tra xem khóa ủy thác đã được đăng ký trên chuỗi chưa:
         *   **Chưa đăng ký**: Hệ thống tự động tính thêm 2 ADA tiền cọc khóa (Key Deposit) và chọn tạo chứng chỉ `registration-stake-and-vote-delegation-certificate`.
         *   **Đã đăng ký**: Chỉ cần tạo chứng chỉ ủy quyền `stake-and-vote-delegation-certificate` không mất tiền cọc.
-    *   Chọn phương án ủy quyền **DRep** (Mặc định là bỏ phiếu trắng *Always Abstain* để bảo vệ quyền lợi nếu bạn chưa chọn được DRep phù hợp).
+    *   Chọn phương án ủy quyền **DRep** (Mặc định là **DRep C2VN** - ID: `drep1ygqlu72zwxszcx0kqdzst4k3g6fxx4klwcmpk0fcuujskvg3pmhgs`).
     *   Chọn **Stake Pool** để nhận phần thưởng (Mặc định là **Pool HADA** - ID: `18109d01af0c5c4495a64a9de061ad621156729afc699128c0ceee0e`).
     *   Chọn UTXO thanh toán phí và tiền đặt cọc (nếu có).
     *   Hệ thống xuất giao dịch thô chứa chứng chỉ ủy thác vào `wallets/C2VN/tx_raw.txt` và hiển thị mã QR.

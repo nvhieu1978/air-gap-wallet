@@ -87,8 +87,12 @@ sudo apt install -y zbar-tools qrencode
 6.  Hệ thống sẽ sinh ra địa chỉ ví và các tệp mã hóa khóa riêng tư `.enc` trong thư mục `wallets/C2VN/`.
 
 ### Bước 2: Cấu hình API Blockfrost (Online)
-1.  Đăng ký tài khoản và lấy Project ID miễn phí tại [Blockfrost.io](https://blockfrost.io).
-2.  Mở tệp `online/config.env` và điền khóa của bạn vào biến:
+1.  Tạo tệp cấu hình `online/config.env` bằng cách sao chép từ tệp ví dụ mẫu:
+    ```bash
+    cp online/config.env.example online/config.env
+    ```
+2.  Đăng ký tài khoản và lấy Project ID miễn phí tại [Blockfrost.io](https://blockfrost.io).
+3.  Mở tệp `online/config.env` và điền khóa của bạn vào biến:
     ```bash
     BLOCKFROST_API_KEY="preprod_xxxxxxxxxxxxxxxx"
     ```

@@ -1,0 +1,26 @@
+# Các thư mục chứa ví, khóa bảo mật và khóa riêng tư (Tuyệt đối không đẩy lên Git)
+offline/wallets/
+offline/wallets*
+
+# Các tệp cấu hình chứa khóa API Blockfrost bảo mật
+online/config.env
+
+# Các tệp tin tạm sinh ra trong quá trình dựng giao dịch
+tx.draft
+tx.raw
+tx.signed
+online/pparams.json
+online/tx.raw
+online/tx.signed
+online/tx.draft
+
+# Các tệp tin ảnh QR tạm thời
+*.png
+online/*.png
+offline/*.png
+
+# Tệp tin tạm thời trên OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.tmp

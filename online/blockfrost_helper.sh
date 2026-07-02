@@ -133,3 +133,27 @@ bf_submit_tx() {
     
     echo "$response"
 }
+
+# Kiểm tra trạng thái đăng ký của địa chỉ stake trên blockchain
+# Cách dùng: bf_check_stake_registered <địa_chỉ_stake>
+bf_check_stake_registered() {
+    check_blockfrost || return 1
+    local stake_addr=$1
+    local url="${BLOCKFROST_URL}/accounts/${stake_addr}"
+    
+    local response
+    response=$(curl -s -H "project_id: $BLOCKFROST_API_KEY" "$url")
+    
+    if [ -z "$response" ] || echo "$response" | grep -q "status_code"; then
+        echo "false"
+        return 0
+    fi
+    
+    local active
+    active=$(echo "$response" | jq -r '.active')
+    if [ "$active" == "true" ]; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}

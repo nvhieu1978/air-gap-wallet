@@ -423,7 +423,344 @@ build_tx() {
     fi
 }
 
-# 3. Đọc QR giao dịch đã ký và thực hiện gửi lên Blockchain
+# 3. Ủy thác Stake Pool & DRep (Dự thảo giao dịch ủy thác Conway Era)
+delegate_tx() {
+    check_cli || return 1
+
+    local wallet_name=""
+    read -p "Nhập tên ví Cardano từ máy offline (ví dụ: C2VN): " wallet_name
+    wallet_name=$(echo "$wallet_name" | tr -cd '[:alnum:]_-')
+
+    local wallet_dir=""
+    if [ -n "$wallet_name" ] && [ -d "../offline/wallets/$wallet_name" ]; then
+        wallet_dir="../offline/wallets/$wallet_name"
+    elif [ -n "$wallet_name" ] && [ -d "../offline/$wallet_name" ]; then
+        wallet_dir="../offline/$wallet_name"
+    else
+        echo "Lỗi: Không tìm thấy thư mục ví cho '$wallet_name'."
+        echo "Vui lòng kiểm tra lại tên ví."
+        return 1
+    fi
+
+    # Đọc địa chỉ gửi từ payment.addr
+    local sender_address=""
+    if [ -f "$wallet_dir/payment.addr" ]; then
+        sender_address=$(cat "$wallet_dir/payment.addr")
+    else
+        echo "Lỗi: Không tìm thấy tệp payment.addr tại '$wallet_dir'."
+        return 1
+    fi
+
+    # Đọc khóa stake.vkey
+    local stake_vkey_path="$wallet_dir/stake.vkey"
+    if [ ! -f "$stake_vkey_path" ]; then
+        echo "Lỗi: Không tìm thấy tệp stake.vkey tại '$wallet_dir'."
+        echo "Vui lòng đảm bảo rằng ví này đã được sinh khóa ủy quyền (stake key)."
+        return 1
+    fi
+
+    # Đọc stake.addr
+    local stake_address=""
+    if [ -f "$wallet_dir/stake.addr" ]; then
+        stake_address=$(cat "$wallet_dir/stake.addr")
+    else
+        # Tạo stake.addr nếu chưa có
+        echo "Đang tạo địa chỉ stake tạm thời..."
+        "$CARDANO_CLI" conway stake-address build \
+            --stake-verification-key-file "$stake_vkey_path" \
+            --out-file "$wallet_dir/stake.addr" \
+            $NETWORK_PARAM
+        stake_address=$(cat "$wallet_dir/stake.addr")
+    fi
+
+    echo "Địa chỉ thanh toán: $sender_address"
+    echo "Địa chỉ ủy thác (Stake Address): $stake_address"
+
+    # Kiểm tra trạng thái trên blockchain thông qua Blockfrost
+    echo "Đang kiểm tra trạng thái đăng ký của Stake Address trên blockchain..."
+    local is_registered
+    is_registered=$(bf_check_stake_registered "$stake_address")
+
+    local deposit=0
+    if [ "$is_registered" == "true" ]; then
+        echo "Trạng thái: ĐÃ ĐĂNG KÝ trên chuỗi. Không cần nộp tiền cọc (Key Deposit)."
+    else
+        echo "Trạng thái: CHƯA ĐĂNG KÝ trên chuỗi."
+        echo "Bạn cần đóng tiền đặt cọc đăng ký khóa (Key Deposit): 2 ADA (2,000,000 Lovelace)."
+        echo "Tiền cọc này sẽ được hoàn lại nếu bạn hủy đăng ký (deregister) khóa stake sau này."
+        deposit=2000000
+    fi
+
+    # Lựa chọn DRep
+    echo "--------------------------------------------------------"
+    echo "Lựa chọn DRep muốn ủy quyền bầu cử (Conway Governance):"
+    echo "1. Bỏ phiếu trắng / Không biểu quyết (Always Abstain) [Mặc định]"
+    echo "2. Luôn bất tín nhiệm (Always No Confidence)"
+    echo "3. Ủy quyền cho một DRep ID cụ thể"
+    read -p "Nhập lựa chọn của bạn (1-3): " drep_choice
+    
+    local drep_arg=""
+    case $drep_choice in
+        2)
+            drep_arg="--always-no-confidence"
+            echo "Đã chọn: Luôn bất tín nhiệm (Always No Confidence)"
+            ;;
+        3)
+            local drep_id=""
+            read -p "Nhập DRep ID (Bech32 bắt đầu bằng 'drep1...' hoặc dạng Hex): " drep_id
+            if [ -z "$drep_id" ]; then
+                echo "DRep ID không được để trống. Hủy thao tác."
+                return 1
+            fi
+            drep_arg="--drep-key-hash $drep_id"
+            echo "Đã chọn DRep ID: $drep_id"
+            ;;
+        *)
+            drep_arg="--always-abstain"
+            echo "Đã chọn: Bỏ phiếu trắng (Always Abstain)"
+            ;;
+    esac
+
+    # Lựa chọn Stake Pool
+    echo "--------------------------------------------------------"
+    local pool_id="18109d01af0c5c4495a64a9de061ad621156729afc699128c0ceee0e"
+    echo "Lựa chọn Stake Pool để ủy thác ADA:"
+    echo "1. Pool HADA (Mặc định) - ID: $pool_id"
+    echo "2. Nhập Stake Pool ID khác"
+    read -p "Nhập lựa chọn của bạn (1-2): " pool_choice
+
+    if [ "$pool_choice" == "2" ]; then
+        read -p "Nhập Stake Pool ID (Bech32 'pool1...' hoặc dạng Hex): " custom_pool_id
+        if [ -n "$custom_pool_id" ]; then
+            pool_id="$custom_pool_id"
+        else
+            echo "Sử dụng Pool HADA mặc định."
+        fi
+    fi
+    echo "Đã chọn Stake Pool: $pool_id"
+
+    # Tạo file chứng chỉ ủy thác (Certificate)
+    echo "--------------------------------------------------------"
+    echo "Đang tạo chứng chỉ ủy thác..."
+    local cert_file="delegation.cert"
+
+    if [ "$is_registered" == "true" ]; then
+        # Chỉ tạo chứng chỉ ủy thác stake và vote
+        if ! "$CARDANO_CLI" conway stake-address stake-and-vote-delegation-certificate \
+            --stake-verification-key-file "$stake_vkey_path" \
+            --stake-pool-id "$pool_id" \
+            $drep_arg \
+            --out-file "$cert_file"; then
+            echo "Lỗi: Không thể tạo chứng chỉ ủy thác."
+            return 1
+        fi
+    else
+        # Tạo chứng chỉ đăng ký + ủy thác stake và vote
+        if ! "$CARDANO_CLI" conway stake-address registration-stake-and-vote-delegation-certificate \
+            --stake-verification-key-file "$stake_vkey_path" \
+            --stake-pool-id "$pool_id" \
+            $drep_arg \
+            --key-reg-deposit-amt "$deposit" \
+            --out-file "$cert_file"; then
+            echo "Lỗi: Không thể tạo chứng chỉ đăng ký và ủy thác."
+            return 1
+        fi
+    fi
+    echo "Đã tạo chứng chỉ ủy thác: $cert_file"
+
+    # Lấy thông tin UTXO để thanh toán phí và đặt cọc
+    echo "Đang truy vấn UTXO người gửi từ Blockfrost..."
+    local utxos_json
+    utxos_json=$(bf_get_utxos "$sender_address")
+    if [ $? -ne 0 ] || [ -z "$utxos_json" ]; then
+        echo "Truy cập UTXO lỗi hoặc ví không có tiền. Vui lòng kiểm tra lại."
+        rm -f "$cert_file"
+        return 1
+    fi
+
+    local sorted_utxos
+    sorted_utxos=$(echo "$utxos_json" | jq -r '.[] | "\(.tx_hash)#\(.tx_index) : \(.amount[] | select(.unit=="lovelace") | .quantity)"')
+
+    if [ -z "$sorted_utxos" ]; then
+        echo "Không tìm thấy UTXO nào cho địa chỉ này. Không thể tạo giao dịch."
+        rm -f "$cert_file"
+        return 1
+    fi
+
+    echo "--------------------------------------------------------"
+    echo "Danh sách UTXO khả dụng:"
+    echo "$sorted_utxos" | nl -w2 -s'. '
+    read -p "Nhập số thứ tự UTXO muốn dùng làm Input (ví dụ: '1', '1 3 4', hoặc 'all' để chọn tất cả): " utxo_input
+
+    utxo_input=$(echo "$utxo_input" | tr ',' ' ' | xargs)
+    local total_utxos
+    total_utxos=$(echo "$sorted_utxos" | wc -l)
+
+    if [ "$utxo_input" = "all" ] || [ "$utxo_input" = "a" ]; then
+        utxo_input=$(seq 1 "$total_utxos")
+    fi
+
+    if [ -z "$utxo_input" ]; then
+        echo "Lựa chọn UTXO không hợp lệ."
+        rm -f "$cert_file"
+        return 1
+    fi
+
+    local tx_in_args=()
+    local input_lovelace=0
+    local utxo_num
+    local has_invalid=false
+    local selected_info=""
+
+    for utxo_num in $utxo_input; do
+        if ! [[ "$utxo_num" =~ ^[0-9]+$ ]] || [ "$utxo_num" -lt 1 ] || [ "$utxo_num" -gt "$total_utxos" ]; then
+            echo "Lựa chọn UTXO thứ tự '$utxo_num' không hợp lệ."
+            has_invalid=true
+            break
+        fi
+
+        local selected_utxo_line
+        selected_utxo_line=$(echo "$sorted_utxos" | sed -n "${utxo_num}p")
+        
+        local utxo_in
+        utxo_in=$(echo "$selected_utxo_line" | awk -F' : ' '{print $1}')
+        local utxo_lovelace
+        utxo_lovelace=$(echo "$selected_utxo_line" | awk -F' : ' '{print $2}')
+
+        tx_in_args+=("--tx-in" "$utxo_in")
+        input_lovelace=$((input_lovelace + utxo_lovelace))
+        selected_info="$selected_info\n  + $utxo_in ($((utxo_lovelace / 1000000)) ADA)"
+    done
+
+    if [ "$has_invalid" = true ] || [ ${#tx_in_args[@]} -eq 0 ]; then
+        echo "Lỗi: Không có UTXO hợp lệ nào được chọn."
+        rm -f "$cert_file"
+        return 1
+    fi
+
+    # Kiểm tra xem tổng ADA đầu vào có đủ trả tiền cọc không
+    if [ $input_lovelace -le $deposit ]; then
+        echo "Lỗi: Số dư đầu vào ($((input_lovelace / 1000000)) ADA) không đủ để chi trả tiền đặt cọc đăng ký khóa ($((deposit / 1000000)) ADA)."
+        rm -f "$cert_file"
+        return 1
+    fi
+
+    # Lấy thông số kỷ nguyên (Epoch parameters) để tính toán phí giao dịch tối thiểu
+    echo "Đang tải tham số mạng lưới (Protocol Parameters) từ Blockfrost..."
+    bf_get_pparams "pparams.json"
+    if [ $? -ne 0 ] || [ ! -f "pparams.json" ]; then
+        echo "Tải tham số mạng lưới thất bại."
+        rm -f "$cert_file"
+        return 1
+    fi
+
+    # Lấy slot mới nhất để cấu hình TTL
+    echo "Đang lấy số slot hiện tại từ Blockfrost..."
+    local latest_slot
+    latest_slot=$(bf_get_latest_slot)
+    if [ $? -ne 0 ]; then
+        echo "Không lấy được slot mới nhất từ Blockfrost."
+        rm -f "$cert_file" pparams.json
+        return 1
+    fi
+    local ttl=$((latest_slot + 1000))
+    echo "Slot block mới nhất: $latest_slot. Đặt TTL giao dịch là $ttl."
+
+    # Xây dựng giao dịch nháp (draft transaction) để ước tính phí tối thiểu
+    echo "Đang tính toán phí giao dịch tối thiểu (Minimum Fee)..."
+    "$CARDANO_CLI" conway transaction build-raw \
+        "${tx_in_args[@]}" \
+        --tx-out "$sender_address+0" \
+        --fee 0 \
+        --certificate-file "$cert_file" \
+        --invalid-hereafter "$ttl" \
+        --protocol-params-file pparams.json \
+        --out-file tx.draft
+
+    # Tính phí tối thiểu
+    local fee_raw
+    fee_raw=$("$CARDANO_CLI" conway transaction calculate-min-fee \
+        --tx-body-file tx.draft \
+        --witness-count 2 \
+        --protocol-params-file pparams.json \
+        $NETWORK_PARAM)
+
+    if [ $? -ne 0 ] || [ -z "$fee_raw" ]; then
+        echo "Lỗi: Không thể tính phí giao dịch."
+        rm -f tx.draft pparams.json "$cert_file"
+        return 1
+    fi
+
+    # Trích xuất giá trị số từ kết quả calculate-min-fee
+    local min_fee
+    min_fee=$(echo "$fee_raw" | grep -oE '[0-9]+' | head -n 1)
+    if [ -z "$min_fee" ]; then
+        echo "Lỗi: Không trích xuất được phí giao dịch từ: $fee_raw"
+        rm -f tx.draft pparams.json "$cert_file"
+        return 1
+    fi
+
+    # Cộng thêm đệm an toàn để tránh lỗi FeeTooSmallUTxO
+    local safety_buffer=2000
+    local final_fee=$((min_fee + safety_buffer))
+    echo "Phí tối thiểu ước tính: $min_fee Lovelace. Áp dụng đệm an toàn: $safety_buffer Lovelace. Phí chính thức: $final_fee Lovelace."
+
+    # Tính toán số dư còn dư trả lại cho ví (Change)
+    # Change = Input - Deposit - Fee
+    local final_change=$((input_lovelace - deposit - final_fee))
+
+    if [ $final_change -lt 1000000 ]; then
+        echo "Lỗi: Số dư còn lại sau khi trừ tiền cọc và phí ($((final_change / 1000000)) ADA) nhỏ hơn 1 ADA (min-utxo)."
+        echo "Vui lòng chọn thêm UTXO đầu vào để hoàn tất giao dịch."
+        rm -f tx.draft pparams.json "$cert_file"
+        return 1
+    fi
+
+    # Xây dựng giao dịch thô chính thức
+    echo "Đang xuất giao dịch thô chính thức..."
+    if ! "$CARDANO_CLI" conway transaction build-raw \
+        "${tx_in_args[@]}" \
+        --tx-out "$sender_address+$final_change" \
+        --fee "$final_fee" \
+        --certificate-file "$cert_file" \
+        --invalid-hereafter "$ttl" \
+        --out-file tx.raw; then
+        echo "Lỗi: Không thể xuất giao dịch thô qua $CARDANO_CLI."
+        rm -f tx.draft pparams.json "$cert_file"
+        return 1
+    fi
+
+    # Lưu chuỗi hex CBOR kèm tiền tố vào tệp tin tx_raw.txt
+    local cbor_hex
+    cbor_hex=$(jq -r '.cborHex' tx.raw)
+
+    echo "TxBodyConwayDelegation:$cbor_hex" > "$wallet_dir/tx_raw.txt"
+    echo "Đã lưu chuỗi văn bản giao dịch thô vào tệp: $wallet_dir/tx_raw.txt"
+
+    # Tạo mã QR
+    if command -v qrencode &> /dev/null; then
+        echo "--------------------------------------------------------"
+        echo "MÃ QR GIAO DỊCH ỦY THÁC THÔ (Quét mã này bằng Máy Offline để ký):"
+        qrencode -t ansiutf8 "TxBodyConwayDelegation:$cbor_hex"
+        qrencode -o "$wallet_dir/tx_raw_qr.png" "TxBodyConwayDelegation:$cbor_hex"
+        echo "File ảnh QR giao dịch thô được lưu tại: $wallet_dir/tx_raw_qr.png"
+    else
+        echo "Cảnh báo: Không tìm thấy 'qrencode'. Bỏ qua vẽ QR trên Terminal."
+    fi
+
+    echo "--------------------------------------------------------"
+    echo "CHUỖI HEX CBOR GIAO DỊCH THÔ (Đã lưu vào $wallet_dir/tx_raw.txt):"
+    echo "TxBodyConwayDelegation:$cbor_hex"
+    echo "--------------------------------------------------------"
+
+    # Lưu lại tên ví đang thao tác để các menu sau tự động nhận diện
+    SELECTED_WALLET_NAME="$wallet_name"
+
+    # Dọn dẹp
+    rm -f tx.draft pparams.json "$cert_file" tx.raw
+}
+
+# 4. Đọc QR giao dịch đã ký và thực hiện gửi lên Blockchain
 submit_signed_tx() {
     echo "--------------------------------------------------------"
     echo "Lựa chọn phương thức nạp giao dịch đã ký:"
@@ -554,8 +891,9 @@ while true; do
     echo "1. Tra cứu Số dư / UTXO"
     echo "2. Khởi tạo Giao dịch Thô (Xuất QR / Chuỗi Hex)"
     echo "3. Đọc mã QR Giao dịch Đã Ký & Submit lên mạng lưới"
-    echo "4. Thoát"
-    read -p "Nhập lựa chọn của bạn (1-4): " choice
+    echo "4. Ủy thác (Stake Pool & DRep)"
+    echo "5. Thoát"
+    read -p "Nhập lựa chọn của bạn (1-5): " choice
 
     case $choice in
         1)
@@ -568,6 +906,9 @@ while true; do
             submit_signed_tx
             ;;
         4)
+            delegate_tx
+            ;;
+        5)
             echo "Đang thoát chương trình..."
             exit 0
             ;;

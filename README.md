@@ -121,4 +121,32 @@ sudo apt install -y zbar-tools qrencode
 2.  Hệ thống hỏi tên ví, hãy nhập `C2VN`.
 3.  Chọn **Option 4 để đọc trực tiếp từ tệp văn bản** (mặc định sẽ kiểm tra `../offline/wallets/C2VN/tx_signed.txt`).
 4.  Giao dịch sẽ được truyền lên mạng lưới Cardano qua Blockfrost API. Khi thành công, liên kết Cardanoscan sẽ hiển thị để bạn theo dõi.
-# air-gap-wallet
+
+---
+
+## Quy trình Ủy thác Stake Pool & Bỏ phiếu DRep (Conway Era)
+
+Trong kỷ nguyên Conway, Cardano gộp việc đăng ký khóa stake, ủy quyền biểu quyết DRep và ủy thác Stake Pool thành các chứng chỉ thống nhất. Dự án hỗ trợ quy trình này hoàn toàn ngoại tuyến:
+
+### Các bước thực hiện:
+
+1.  **Khởi tạo Giao dịch Ủy thác (Online)**:
+    *   Chạy `./online_main.sh` trên máy online và chọn **Option 4 (Ủy thác Stake Pool & DRep)**.
+    *   Nhập tên ví (ví dụ: `C2VN`). Hệ thống tự động đọc khóa `stake.vkey` và địa chỉ stake `stake.addr`.
+    *   Hệ thống gọi API Blockfrost để kiểm tra xem khóa ủy thác đã được đăng ký trên chuỗi chưa:
+        *   **Chưa đăng ký**: Hệ thống tự động tính thêm 2 ADA tiền cọc khóa (Key Deposit) và chọn tạo chứng chỉ `registration-stake-and-vote-delegation-certificate`.
+        *   **Đã đăng ký**: Chỉ cần tạo chứng chỉ ủy quyền `stake-and-vote-delegation-certificate` không mất tiền cọc.
+    *   Chọn phương án ủy quyền **DRep** (Mặc định là bỏ phiếu trắng *Always Abstain* để bảo vệ quyền lợi nếu bạn chưa chọn được DRep phù hợp).
+    *   Chọn **Stake Pool** để nhận phần thưởng (Mặc định là **Pool HADA** - ID: `18109d01af0c5c4495a64a9de061ad621156729afc699128c0ceee0e`).
+    *   Chọn UTXO thanh toán phí và tiền đặt cọc (nếu có).
+    *   Hệ thống xuất giao dịch thô chứa chứng chỉ ủy thác vào `wallets/C2VN/tx_raw.txt` và hiển thị mã QR.
+
+2.  **Ký giao dịch ngoại tuyến (Offline)**:
+    *   Chạy `./offline_main.sh` trên máy offline và chọn **Option 2 (Sign Raw Transaction)**.
+    *   Nhập tên ví `C2VN` và mật khẩu.
+    *   Hệ thống sẽ **tự động phát hiện** tệp `stake.skey.enc` bên cạnh `payment.skey.enc`.
+    *   Hệ thống tiến hành giải mã an toàn cả hai khóa thô vào RAM Disk (`/dev/shm`), thực hiện ký đồng thời bằng cả khóa thanh toán và khóa ủy quyền (vì giao dịch ủy thác yêu cầu chữ ký của khóa Stake để xác thực quyền sở hữu).
+    *   Sau khi ký, các khóa thô lập tức bị xóa sạch bằng `shred` để bảo mật tuyệt đối. Giao dịch đã ký được xuất ra `wallets/C2VN/tx_signed.txt` dưới dạng QR/Hex.
+
+3.  **Gửi giao dịch đã ký (Online)**:
+    *   Thực hiện tương tự **Bước 6** thông thường để gửi giao dịch đã ký lên mạng lưới thông qua Blockfrost.

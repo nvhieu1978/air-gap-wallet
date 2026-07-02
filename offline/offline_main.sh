@@ -118,8 +118,16 @@ get_raw_tx() {
     # Loại bỏ khoảng trắng và ký tự xuống dòng dư thừa
     qr_content=$(echo "$qr_content" | tr -d '\r\n[:space:]')
     
-    # Loại bỏ tiền tố nhận dạng TxBodyConway: nếu có để lấy chuỗi hex thô
-    qr_content=${qr_content#TxBodyConway:}
+    # Xác định loại giao dịch thông qua tiền tố nhận dạng
+    if [[ "$qr_content" == TxBodyConwayDelegation:* ]]; then
+        IS_DELEGATION=true
+        qr_content=${qr_content#TxBodyConwayDelegation:}
+        echo "Nhận diện loại giao dịch: ỦY THÁC (Stake Pool & DRep)"
+    else
+        IS_DELEGATION=false
+        qr_content=${qr_content#TxBodyConway:}
+        echo "Nhận diện loại giao dịch: GIAO DỊCH THÔNG THƯỜNG"
+    fi
     
     if [[ -z "$qr_content" ]]; then
         echo "Lỗi: Không nhận được dữ liệu giao dịch thô."
@@ -156,6 +164,7 @@ get_envelope_type() {
 sign_transaction() {
     # Nhập tên ví thực hiện ký từ người dùng
     local wallet_name=""
+    local IS_DELEGATION=false
     read -p "Nhập tên ví thực hiện ký (ví dụ: C2VN): " wallet_name
     wallet_name=$(echo "$wallet_name" | tr -cd '[:alnum:]_-')
     local wallet_dir="./wallets/$wallet_name"
@@ -211,10 +220,44 @@ EOF
         return 1
     fi
 
+    # Mảng chứa các tham số ký
+    local sign_args=()
+    sign_args+=("--signing-key-file" "$TMP_KEY_PATH")
+
+    # Kiểm tra và giải mã thêm stake key nếu cần thiết (đối với giao dịch ủy thác)
+    local stake_enc_path="$wallet_dir/stake.skey.enc"
+    local TMP_STAKE_KEY_PATH="$TMP_DIR/stake.skey.tmp"
+    if [ -f "$stake_enc_path" ]; then
+        local need_stake_sign=false
+        if [ "$IS_DELEGATION" = true ]; then
+            echo "Phát hiện giao dịch ủy thác (Stake Pool/DRep). Tự động dùng thêm khóa Stake để ký."
+            need_stake_sign=true
+        else
+            echo "Phát hiện khóa Stake (stake.skey.enc)."
+            read -p "Giao dịch này có phải là giao dịch ủy thác (Stake/DRep) cần chữ ký khóa Stake không? (y/N): " choice_stake
+            if [[ "$choice_stake" =~ ^[yY](e[sS])?$ ]]; then
+                need_stake_sign=true
+            fi
+        fi
+
+        if [ "$need_stake_sign" = true ]; then
+            echo "Đang giải mã khóa riêng tư stake..."
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in "$stake_enc_path" -out "$TMP_STAKE_KEY_PATH" -pass pass:"$password" 2>/dev/null
+            if [ -f "$TMP_STAKE_KEY_PATH" ] && [ -s "$TMP_STAKE_KEY_PATH" ]; then
+                sign_args+=("--signing-key-file" "$TMP_STAKE_KEY_PATH")
+                echo "Đã giải mã khóa riêng tư stake thành công."
+            else
+                echo "Lỗi: Giải mã khóa riêng tư stake thất bại hoặc mật khẩu không hợp lệ."
+                cleanup
+                return 1
+            fi
+        fi
+    fi
+
     echo "Đang tiến hành ký giao dịch ngoại tuyến..."
-    # Gọi cardano-cli ký giao dịch thô bằng khóa riêng tư vừa giải mã tạm thời trên RAM
+    # Gọi cardano-cli ký giao dịch thô bằng các khóa riêng tư vừa giải mã tạm thời trên RAM
     if "$CARDANO_CLI" conway transaction sign \
-        --signing-key-file "$TMP_KEY_PATH" \
+        "${sign_args[@]}" \
         $NETWORK_PARAM \
         --tx-body-file "$TMP_DIR/tx.raw" \
         --out-file "$TMP_DIR/tx.signed"; then

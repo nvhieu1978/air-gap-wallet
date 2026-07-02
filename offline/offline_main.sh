@@ -26,6 +26,20 @@ else
 fi
 TMP_KEY_PATH="$TMP_DIR/payment.skey.tmp"
 
+# Xác định thư mục dự án
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Định nghĩa đường dẫn cho cardano-cli
+CARDANO_CLI="cardano-cli"
+if ! command -v cardano-cli &>/dev/null; then
+    if [ -f "$PROJECT_ROOT/cardano-cli" ] && [ -x "$PROJECT_ROOT/cardano-cli" ]; then
+        CARDANO_CLI="$PROJECT_ROOT/cardano-cli"
+    elif [ -f "$SCRIPT_DIR/cardano-cli" ] && [ -x "$SCRIPT_DIR/cardano-cli" ]; then
+        CARDANO_CLI="$SCRIPT_DIR/cardano-cli"
+    fi
+fi
+
 # Hàm dọn dẹp an toàn các tệp khóa thô tạm thời trên RAM/Disk khi chương trình tắt
 cleanup() {
     if [ -d "$TMP_DIR" ]; then
@@ -125,9 +139,9 @@ get_raw_tx() {
 # Hàm lấy loại envelope tương thích với phiên bản cardano-cli
 get_envelope_type() {
     local cli_version=""
-    if command -v cardano-cli &>/dev/null; then
+    if command -v "$CARDANO_CLI" &>/dev/null; then
         # Lấy số phiên bản chính đầu tiên (ví dụ: 8, 9, 10, 11)
-        cli_version=$(cardano-cli --version | head -n 1 | grep -oE 'cardano-cli [0-9]+' | grep -oE '[0-9]+')
+        cli_version=$("$CARDANO_CLI" --version | head -n 1 | grep -oE 'cardano-cli [0-9]+' | grep -oE '[0-9]+')
     fi
 
     # Mặc định với cardano-cli v9, v10, v11 trở lên, loại envelope cho giao dịch thô và đã ký đều là "Tx ConwayEra"
@@ -199,7 +213,7 @@ EOF
 
     echo "Đang tiến hành ký giao dịch ngoại tuyến..."
     # Gọi cardano-cli ký giao dịch thô bằng khóa riêng tư vừa giải mã tạm thời trên RAM
-    if cardano-cli conway transaction sign \
+    if "$CARDANO_CLI" conway transaction sign \
         --signing-key-file "$TMP_KEY_PATH" \
         $NETWORK_PARAM \
         --tx-body-file "$TMP_DIR/tx.raw" \

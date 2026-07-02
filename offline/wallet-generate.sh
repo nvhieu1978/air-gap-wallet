@@ -16,9 +16,33 @@ else
     NETWORK_PARAM="--testnet-magic 2"
 fi
 
+# Xác định thư mục dự án
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Định nghĩa đường dẫn cho cardano-cli
+CARDANO_CLI="cardano-cli"
+if ! command -v cardano-cli &>/dev/null; then
+    if [ -f "$PROJECT_ROOT/cardano-cli" ] && [ -x "$PROJECT_ROOT/cardano-cli" ]; then
+        CARDANO_CLI="$PROJECT_ROOT/cardano-cli"
+    elif [ -f "$SCRIPT_DIR/cardano-cli" ] && [ -x "$SCRIPT_DIR/cardano-cli" ]; then
+        CARDANO_CLI="$SCRIPT_DIR/cardano-cli"
+    fi
+fi
+
+# Định nghĩa đường dẫn cho cardano-address
+CARDANO_ADDRESS="cardano-address"
+if ! command -v cardano-address &>/dev/null; then
+    if [ -f "$PROJECT_ROOT/cardano-address" ] && [ -x "$PROJECT_ROOT/cardano-address" ]; then
+        CARDANO_ADDRESS="$PROJECT_ROOT/cardano-address"
+    elif [ -f "$SCRIPT_DIR/cardano-address" ] && [ -x "$SCRIPT_DIR/cardano-address" ]; then
+        CARDANO_ADDRESS="$SCRIPT_DIR/cardano-address"
+    fi
+fi
+
 # Kiểm tra các công cụ bắt buộc trên máy ngoại tuyến
-command -v cardano-address > /dev/null || { echo "Lỗi: Chưa cài đặt 'cardano-address'."; exit 1; }
-command -v cardano-cli > /dev/null || { echo "Lỗi: Chưa cài đặt 'cardano-cli'."; exit 1; }
+command -v "$CARDANO_ADDRESS" > /dev/null || { echo "Lỗi: Chưa cài đặt 'cardano-address' trong hệ thống hoặc tại thư mục gốc."; exit 1; }
+command -v "$CARDANO_CLI" > /dev/null || { echo "Lỗi: Chưa cài đặt 'cardano-cli' trong hệ thống hoặc tại thư mục gốc."; exit 1; }
 command -v openssl > /dev/null || { echo "Lỗi: Chưa cài đặt 'openssl'."; exit 1; }
 
 # Nhập tên ví từ người dùng
@@ -77,7 +101,7 @@ while true; do
         1)
             echo "Đang tạo cụm từ khôi phục 24 từ mới..."
             # Sinh cụm từ 24 từ lưu trữ trực tiếp vào RAM disk
-            cardano-address recovery-phrase generate --size 24 > "$TMP_DIR/phrase.prv"
+            "$CARDANO_ADDRESS" recovery-phrase generate --size 24 > "$TMP_DIR/phrase.prv"
             echo "Cụm từ bảo mật tạm thời đã được tạo trong bộ nhớ RAM."
             break
             ;;
@@ -118,50 +142,50 @@ while true; do
 done
 
 # Bước 1: Tạo khóa gốc (Root Private Key) từ cụm từ bảo mật lưu trên RAM
-cardano-address key from-recovery-phrase Shelley < "$TMP_DIR/phrase.prv" > "$TMP_DIR/root.prv"
+"$CARDANO_ADDRESS" key from-recovery-phrase Shelley < "$TMP_DIR/phrase.prv" > "$TMP_DIR/root.prv"
 
 # Bước 2: Tạo khóa thanh toán (Payment Key) lưu trên RAM
-cardano-address key child 1852H/1815H/0H/0/0 < "$TMP_DIR/root.prv" > "$TMP_DIR/payment.prv"
-cardano-address key public --without-chain-code < "$TMP_DIR/payment.prv" > "$WALLET_DIR/payment.pub"
+"$CARDANO_ADDRESS" key child 1852H/1815H/0H/0/0 < "$TMP_DIR/root.prv" > "$TMP_DIR/payment.prv"
+"$CARDANO_ADDRESS" key public --without-chain-code < "$TMP_DIR/payment.prv" > "$WALLET_DIR/payment.pub"
 
 # Chuyển đổi khóa thanh toán riêng tư sang định dạng skey của cardano-cli lưu trên RAM
-cardano-cli key convert-cardano-address-key --shelley-payment-key \
+"$CARDANO_CLI" key convert-cardano-address-key --shelley-payment-key \
     --signing-key-file "$TMP_DIR/payment.prv" \
     --out-file "$TMP_DIR/payment.skey"
 
 # Xuất khóa công khai tương ứng (vkey) lưu vào thư mục ví (công khai)
-cardano-cli key verification-key \
+"$CARDANO_CLI" key verification-key \
     --signing-key-file "$TMP_DIR/payment.skey" \
     --verification-key-file "$WALLET_DIR/payment.vkey"
 
 # Bước 3: Tạo khóa ủy quyền (Stake Key) lưu trên RAM
-cardano-address key child 1852H/1815H/0H/2/0 < "$TMP_DIR/root.prv" > "$TMP_DIR/stake.prv"
+"$CARDANO_ADDRESS" key child 1852H/1815H/0H/2/0 < "$TMP_DIR/root.prv" > "$TMP_DIR/stake.prv"
 
 # Chuyển đổi khóa ủy quyền riêng tư sang định dạng skey của cardano-cli lưu trên RAM
-cardano-cli key convert-cardano-address-key \
+"$CARDANO_CLI" key convert-cardano-address-key \
     --signing-key-file "$TMP_DIR/stake.prv" \
     --shelley-stake-key \
     --out-file "$TMP_DIR/stake.skey"
 
 # Xuất khóa ủy quyền công khai mở rộng lưu trên RAM
-cardano-cli key verification-key \
+"$CARDANO_CLI" key verification-key \
     --signing-key-file "$TMP_DIR/stake.skey" \
     --verification-key-file "$TMP_DIR/Ext_ShelleyStake.vkey"
 
 # Chuyển đổi về dạng khóa ủy quyền công khai không mở rộng chuẩn lưu vào thư mục ví (công khai)
-cardano-cli key non-extended-key \
+"$CARDANO_CLI" key non-extended-key \
     --extended-verification-key-file "$TMP_DIR/Ext_ShelleyStake.vkey" \
     --verification-key-file "$WALLET_DIR/stake.vkey"
 
 # Bước 4: Tạo địa chỉ ví thanh toán lưu vào thư mục ví (công khai)
-cardano-cli address build \
+"$CARDANO_CLI" address build \
     --payment-verification-key-file "$WALLET_DIR/payment.vkey" \
     $NETWORK_PARAM \
     --stake-verification-key-file "$WALLET_DIR/stake.vkey" \
     --out-file "$WALLET_DIR/payment.addr"
 
 # Tạo địa chỉ ví ủy quyền lưu vào thư mục ví (công khai)
-cardano-cli conway stake-address build \
+"$CARDANO_CLI" conway stake-address build \
     --stake-verification-key-file "$WALLET_DIR/stake.vkey" \
     --out-file "$WALLET_DIR/stake.addr" \
     $NETWORK_PARAM

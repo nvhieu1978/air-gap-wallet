@@ -25,15 +25,29 @@ else
     exit 1
 fi
 
+# Xác định thư mục dự án
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Định nghĩa đường dẫn cho cardano-cli
+CARDANO_CLI="cardano-cli"
+if ! command -v cardano-cli &>/dev/null; then
+    if [ -f "$PROJECT_ROOT/cardano-cli" ] && [ -x "$PROJECT_ROOT/cardano-cli" ]; then
+        CARDANO_CLI="$PROJECT_ROOT/cardano-cli"
+    elif [ -f "$SCRIPT_DIR/cardano-cli" ] && [ -x "$SCRIPT_DIR/cardano-cli" ]; then
+        CARDANO_CLI="$SCRIPT_DIR/cardano-cli"
+    fi
+fi
+
 # Kiểm tra xem cardano-cli đã được cài đặt chưa (cần để build transaction)
-command -v cardano-cli > /dev/null || { echo "Cảnh báo: 'cardano-cli' chưa được cài đặt. Bạn không thể tạo giao dịch thô trực tiếp trên máy này."; }
+command -v "$CARDANO_CLI" > /dev/null || { echo "Cảnh báo: '$CARDANO_CLI' chưa được cài đặt trong hệ thống hoặc tại thư mục gốc. Bạn không thể tạo giao dịch thô trực tiếp trên máy này."; }
 command -v jq > /dev/null || { echo "Lỗi: 'jq' chưa được cài đặt. Vui lòng cài đặt trước."; exit 1; }
 command -v curl > /dev/null || { echo "Lỗi: 'curl' chưa được cài đặt. Vui lòng cài đặt trước."; exit 1; }
 
 # Hàm kiểm tra sự tồn tại của cardano-cli trước khi thực hiện các tác vụ liên quan
 check_cli() {
-    if ! command -v cardano-cli &> /dev/null; then
-        echo "Lỗi: Yêu cầu công cụ 'cardano-cli' để thực hiện thao tác này."
+    if ! command -v "$CARDANO_CLI" &> /dev/null; then
+        echo "Lỗi: Yêu cầu công cụ '$CARDANO_CLI' để thực hiện thao tác này."
         return 1
     fi
     return 0
@@ -42,8 +56,8 @@ check_cli() {
 # Hàm lấy loại envelope giao dịch đã ký tương thích với phiên bản cardano-cli
 get_envelope_type_signed() {
     local cli_version=""
-    if command -v cardano-cli &>/dev/null; then
-        cli_version=$(cardano-cli --version | head -n 1 | grep -oE 'cardano-cli [0-9]+' | grep -oE '[0-9]+')
+    if command -v "$CARDANO_CLI" &>/dev/null; then
+        cli_version=$("$CARDANO_CLI" --version | head -n 1 | grep -oE 'cardano-cli [0-9]+' | grep -oE '[0-9]+')
     fi
 
     if [ -n "$cli_version" ] && [ "$cli_version" -lt 9 ]; then
@@ -275,7 +289,7 @@ build_tx() {
     # Xây dựng giao dịch nháp (draft transaction) với cấu trúc tương đương giao dịch thật
     # (bao gồm cả đầu ra tiền thừa và TTL) để ước tính kích thước và phí chính xác nhất
     echo "Đang tính toán phí giao dịch tối thiểu (Minimum Fee)..."
-    cardano-cli conway transaction build-raw \
+    "$CARDANO_CLI" conway transaction build-raw \
         "${tx_in_args[@]}" \
         --tx-out "$tx_out+0" \
         --tx-out "$sender_address+0" \
@@ -286,7 +300,7 @@ build_tx() {
 
     # Tính phí tối thiểu dựa trên kích thước giao dịch thô nháp vừa sinh
     local fee_raw
-    fee_raw=$(cardano-cli conway transaction calculate-min-fee \
+    fee_raw=$("$CARDANO_CLI" conway transaction calculate-min-fee \
         --tx-body-file tx.draft \
         --witness-count 1 \
         --protocol-params-file pparams.json \
@@ -350,7 +364,7 @@ build_tx() {
     # Xây dựng giao dịch thô cuối cùng dựa trên các thông số đã tối ưu
     echo "Đang xuất giao dịch thô chính thức..."
     if [ $final_change -gt 0 ]; then
-        cardano-cli conway transaction build-raw \
+        "$CARDANO_CLI" conway transaction build-raw \
             "${tx_in_args[@]}" \
             --tx-out "$tx_out+$tx_amount_lovelace" \
             --tx-out "$sender_address+$final_change" \
@@ -358,7 +372,7 @@ build_tx() {
             --invalid-hereafter "$ttl" \
             --out-file tx.raw
     else
-        cardano-cli conway transaction build-raw \
+        "$CARDANO_CLI" conway transaction build-raw \
             "${tx_in_args[@]}" \
             --tx-out "$tx_out+$tx_amount_lovelace" \
             --fee "$final_fee" \
@@ -403,7 +417,7 @@ build_tx() {
         # Dọn dẹp các tệp tạm để tránh rác hệ thống
         rm -f tx.draft pparams.json
     else
-        echo "Lỗi: Không thể xuất giao dịch thô qua cardano-cli."
+        echo "Lỗi: Không thể xuất giao dịch thô qua $CARDANO_CLI."
         rm -f tx.draft pparams.json
         return 1
     fi

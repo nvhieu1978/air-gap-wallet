@@ -494,18 +494,23 @@ delegate_tx() {
     # Lựa chọn DRep
     echo "--------------------------------------------------------"
     echo "Lựa chọn DRep muốn ủy quyền bầu cử (Conway Governance):"
-    echo "1. Bỏ phiếu trắng / Không biểu quyết (Always Abstain) [Mặc định]"
-    echo "2. Luôn bất tín nhiệm (Always No Confidence)"
-    echo "3. Ủy quyền cho một DRep ID cụ thể"
-    read -p "Nhập lựa chọn của bạn (1-3): " drep_choice
+    echo "1. DRep C2VN (Mặc định) - ID: drep1ygqlu72zwxszcx0kqdzst4k3g6fxx4klwcmpk0fcuujskvg3pmhgs"
+    echo "2. Bỏ phiếu trắng / Không biểu quyết (Always Abstain)"
+    echo "3. Luôn bất tín nhiệm (Always No Confidence)"
+    echo "4. Ủy quyền cho một DRep ID khác"
+    read -p "Nhập lựa chọn của bạn (1-4): " drep_choice
     
     local drep_arg=""
     case $drep_choice in
         2)
+            drep_arg="--always-abstain"
+            echo "Đã chọn: Bỏ phiếu trắng (Always Abstain)"
+            ;;
+        3)
             drep_arg="--always-no-confidence"
             echo "Đã chọn: Luôn bất tín nhiệm (Always No Confidence)"
             ;;
-        3)
+        4)
             local drep_id=""
             read -p "Nhập DRep ID (Bech32 bắt đầu bằng 'drep1...' hoặc dạng Hex): " drep_id
             if [ -z "$drep_id" ]; then
@@ -516,8 +521,9 @@ delegate_tx() {
             echo "Đã chọn DRep ID: $drep_id"
             ;;
         *)
-            drep_arg="--always-abstain"
-            echo "Đã chọn: Bỏ phiếu trắng (Always Abstain)"
+            local default_drep="drep1ygqlu72zwxszcx0kqdzst4k3g6fxx4klwcmpk0fcuujskvg3pmhgs"
+            drep_arg="--drep-key-hash $default_drep"
+            echo "Đã chọn DRep C2VN (Mặc định): $default_drep"
             ;;
     esac
 

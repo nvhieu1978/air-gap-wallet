@@ -24,3 +24,6 @@ offline/*.png
 .idea/
 .vscode/
 *.tmp
+
+# Kịch bản kiểm thử E2E cục bộ (không đẩy lên GitHub)
+online/test_e2e_transfer.sh

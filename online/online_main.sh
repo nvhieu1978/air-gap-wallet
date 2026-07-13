@@ -69,7 +69,8 @@ get_envelope_type_signed() {
 
 # Hàm phụ trợ để lấy địa chỉ người gửi (tự động nhận diện từ ví offline hoặc nhập tay)
 get_sender_address() {
-    local prompt_msg="$1"
+    local __resultvar=$1
+    local prompt_msg="$2"
     local address=""
     local wallet_name=""
     local use_offline=""
@@ -105,13 +106,13 @@ get_sender_address() {
             read -p "$prompt_msg: " address
         fi
     fi
-    echo "$address"
+    eval $__resultvar="'$address'"
 }
 
 # 1. Truy vấn UTXO và tính toán số dư của địa chỉ ví
 check_balance() {
     local address=""
-    address=$(get_sender_address "Nhập địa chỉ ví Cardano")
+    get_sender_address address "Nhập địa chỉ ví Cardano"
     
     if [ -z "$address" ]; then
         echo "Lỗi: Địa chỉ ví không được bỏ trống."
@@ -165,7 +166,7 @@ build_tx() {
     check_cli || return 1
 
     local sender_address=""
-    sender_address=$(get_sender_address "Nhập địa chỉ người gửi")
+    get_sender_address sender_address "Nhập địa chỉ người gửi"
 
     if [ -z "$sender_address" ]; then
         echo "Lỗi: Địa chỉ người gửi không được để trống."
@@ -669,7 +670,7 @@ delegate_tx() {
         rm -f "$cert_file" pparams.json
         return 1
     fi
-    local ttl=$((latest_slot + 1000))
+    local ttl=$((latest_slot + 10000))
     echo "Slot block mới nhất: $latest_slot. Đặt TTL giao dịch là $ttl."
 
     # Xây dựng giao dịch nháp (draft transaction) để ước tính phí tối thiểu

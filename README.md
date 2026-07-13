@@ -58,7 +58,7 @@ sudo apt install -y zbar-tools qrencode
 *   *Tùy chọn:* `zbar-tools` (Gồm `zbarcam` và `zbarimg` để quét mã QR đã ký từ máy Offline).
 
 ### Máy Offline (Cold):
-*   `cardano-address` & `cardano-cli` (Dùng để tạo khóa, địa chỉ và ký giao dịch).
+*   `cardano-cli` (bắt buộc) và `cardano-address` (tùy chọn - nếu không tìm thấy cardano-address, hệ thống sẽ tự động dùng cardano-cli để sinh khóa, địa chỉ và ký giao dịch).
 *   `openssl` (Hỗ trợ mã hóa khóa riêng tư).
 *   `qrencode` (Chuyển giao dịch đã ký thành mã QR).
 *   *Tùy chọn:* `zbar-tools` (Quét mã QR giao dịch raw từ máy Online).
@@ -113,8 +113,9 @@ sudo apt install -y zbar-tools qrencode
 1.  Chạy `./offline_main.sh` trên máy offline, chọn **Option 2 (Sign Raw Transaction)**.
 2.  Nhập tên ví thực hiện ký (ví dụ: `C2VN`).
 3.  Chọn phương thức nhập giao dịch: Quét trực tiếp bằng Webcam, Đọc file ảnh mã QR, Dán chuỗi văn bản, hoặc **chọn Option 4 để đọc trực tiếp từ tệp văn bản** (mặc định sẽ tải từ `wallets/C2VN/tx_raw.txt`).
-4.  Nhập mật khẩu ví để giải mã khóa và ký giao dịch.
-5.  Hệ thống ký giao dịch và tự động lưu tệp đã ký vào `wallets/C2VN/tx_signed.txt` và mã QR `wallets/C2VN/tx_signed_qr.png`.
+4.  **Xem chi tiết Giao dịch & Xác nhận**: Hệ thống sẽ giải mã cấu trúc giao dịch thô bằng `cardano-cli debug transaction view` để hiển thị chi tiết Kỷ nguyên (Era), Phí giao dịch (Fee), các UTXO đầu vào (Inputs) và địa chỉ nhận cùng số lượng ADA/Tokens đầu ra (Outputs). Người dùng cần kiểm tra kỹ và nhập `y` để xác nhận đồng ý ký trước khi tiếp tục.
+5.  Nhập mật khẩu ví để giải mã khóa và tiến hành ký giao dịch ngoại tuyến.
+6.  Hệ thống ký giao dịch và tự động lưu tệp đã ký vào `wallets/C2VN/tx_signed.txt` và mã QR `wallets/C2VN/tx_signed_qr.png`.
 
 ### Bước 6: Đọc giao dịch đã ký & Gửi lên Blockchain (Online)
 1.  Chọn **Option 3 (Read Signed Transaction & Submit)** trên menu `online_main.sh`.
@@ -150,3 +151,39 @@ Trong kỷ nguyên Conway, Cardano gộp việc đăng ký khóa stake, ủy quy
 
 3.  **Gửi giao dịch đã ký (Online)**:
     *   Thực hiện tương tự **Bước 6** thông thường để gửi giao dịch đã ký lên mạng lưới thông qua Blockfrost.
+
+---
+
+## Kiểm thử Tự động Luồng Giao dịch E2E (Cục bộ)
+
+Để hỗ trợ xác minh nhanh tính toàn vẹn của mã nguồn trước khi cập nhật dự án mà không cần thực hiện thủ công các bước trung gian, kịch bản kiểm thử tự động End-to-End (E2E) được cung cấp tại: `online/test_e2e_transfer.sh`.
+
+> [!NOTE]
+> Kịch bản kiểm thử này được thiết lập trong `.gitignore` nhằm tránh việc vô tình đồng bộ lên GitHub công khai, giúp bảo vệ an toàn cho thông tin và cấu hình môi trường phát triển cục bộ.
+
+### Yêu cầu chuẩn bị:
+1. Thiết bị chạy thử nghiệm cần có kết nối mạng và đã cấu hình chính xác Blockfrost API Key trong `online/config.env`.
+2. Ví dùng để kiểm thử (ví dụ: `C2VN` trên mạng Cardano Preprod) cần có số dư khả dụng tối thiểu là **11.5 ADA** (để đáp ứng yêu cầu UTXO tối thiểu của kỷ nguyên Conway và phí giao dịch khi tự gửi cho chính mình).
+3. Đã có ví ngoại tuyến được tạo sẵn (tức là đã có thư mục ví tại `offline/wallets/<WALLET_NAME>`).
+
+### Cách sử dụng:
+1. Di chuyển vào thư mục `online/`:
+   ```bash
+   cd online
+   ```
+2. Khởi chạy kịch bản kiểm thử:
+   ```bash
+   ./test_e2e_transfer.sh
+   ```
+3. Kịch bản sẽ quét và hiển thị danh sách các ví khả dụng có trong thư mục `offline/wallets/`. Vui lòng chọn ví bạn muốn dùng để test.
+4. Menu chính cung cấp các chức năng sau:
+   * **1. CHẠY TOÀN BỘ LUỒNG TỰ ĐỘNG (Build -> Sign -> Submit)**: Tự động chạy tuần tự cả 3 bước (Tạo giao dịch thô -> Yêu cầu nhập mật khẩu giải mã để ký -> Gửi giao dịch đã ký lên Cardano Preprod).
+   * **2. Chạy Bước 1: Khởi tạo giao dịch thô (Online)**: Chỉ khởi tạo giao dịch tự chuyển khoản 10 ADA cho chính ví đó và xuất file `tx_raw.txt`.
+   * **3. Chạy Bước 2: Ký giao dịch ngoại tuyến (Offline)**: Yêu cầu nhập mật khẩu để ký ngoại tuyến file `tx_raw.txt` và xuất file `tx_signed.txt`.
+   * **4. Chạy Bước 3: Gửi giao dịch đã ký lên mạng (Online)**: Gửi file `tx_signed.txt` lên mạng lưới thông qua Blockfrost.
+   * **5. Chọn ví khác**: Thay đổi ví thực hiện kiểm thử.
+   * **6. Thoát kịch bản kiểm thử**.
+
+
+---
+

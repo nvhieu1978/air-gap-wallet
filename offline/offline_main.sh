@@ -205,6 +205,43 @@ sign_transaction() {
 EOF
     echo "Đã tái cấu trúc tệp tin giao dịch thô tạm trên RAM (Loại: $env_type)."
 
+    # Hiển thị thông tin giao dịch trước khi tiến hành ký
+    echo "========================================================"
+    echo "       XEM CHI TIẾT GIAO DỊCH TRƯỚC KHI KÝ"
+    echo "========================================================"
+    if command -v "$CARDANO_CLI" &>/dev/null; then
+        local tx_view_json
+        tx_view_json=$("$CARDANO_CLI" debug transaction view --tx-body-file "$TMP_DIR/tx.raw" 2>/dev/null)
+        if [ $? -eq 0 ] && [ -n "$tx_view_json" ]; then
+            echo "$tx_view_json" | jq -r '
+. | "Kỷ nguyên: " + (.era // "N/A"),
+"Phí giao dịch: " + (.fee // "N/A"),
+"",
+"Đầu vào (Inputs):",
+(if .inputs then .inputs[] | "  - " + . else "  - (Không có đầu vào)" end),
+"",
+"Đầu ra (Outputs):",
+(if .outputs then .outputs[] | "  - Địa chỉ: " + (.address // "N/A") + "\n    Số lượng: " + (.amount | to_entries | map(if .key == "lovelace" then "\(.value / 1000000) ADA (\(.value) Lovelace)" else "\(.value) \(.key)" end) | join(", ")) else "  - (Không có đầu ra)" end)
+'
+        else
+            echo "Cảnh báo: Không thể giải mã thông tin chi tiết giao dịch."
+        fi
+    else
+        echo "Cảnh báo: cardano-cli không khả dụng để hiển thị chi tiết giao dịch."
+    fi
+    echo "========================================================"
+    echo ""
+
+    # Hỏi người dùng có đồng ý ký giao dịch này hay không
+    local confirm_sign=""
+    read -p "Bạn có chắc chắn muốn KÝ giao dịch này không? (y/N): " confirm_sign
+    if [[ ! "$confirm_sign" =~ ^[yY](e[sS])?$ ]]; then
+        echo "Hủy bỏ quá trình ký giao dịch theo yêu cầu người dùng."
+        cleanup
+        return 1
+    fi
+    echo ""
+
     # Yêu cầu nhập mật khẩu bảo mật ví để giải mã khóa riêng tư tạm thời
     read -s -p "Nhập mật khẩu ví: " password
     echo ""

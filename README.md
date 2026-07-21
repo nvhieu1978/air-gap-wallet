@@ -80,11 +80,12 @@ sudo apt install -y zbar-tools qrencode
 
 ### Bước 1: Tạo/Khôi phục ví (Offline)
 1.  Truy cập thư mục `offline/`.
-2.  Chạy `./offline_main.sh` và chọn **Option 1 (Create / Restore Wallet)**.
+2.  Chạy `./offline_main.sh` và chọn **Option 1 (Tạo mới / Khôi phục ví)**.
 3.  Nhập tên ví (ví dụ: `C2VN`). Thư mục `wallets/C2VN/` sẽ được tự động tạo.
 4.  Lựa chọn tạo mới hoặc nhập cụm 24 từ khôi phục.
 5.  Nhập mật khẩu bảo vệ ví.
-6.  Hệ thống sẽ sinh ra địa chỉ ví và các tệp mã hóa khóa riêng tư `.enc` trong thư mục `wallets/C2VN/`.
+6.  Hệ thống sinh ra địa chỉ ví và các tệp mã hóa khóa riêng tư `.enc` trong `wallets/C2VN/`. Khi tạo ví mới, hệ thống tự động hiển thị 24 từ khôi phục theo dạng bảng (4 từ/hàng, hiển thị 3 hàng mỗi trang) để bạn lưu trữ an toàn.
+7.  *Tùy chọn:* Khi muốn xem lại cụm từ khôi phục của ví đã tạo bất kỳ lúc nào, bạn chọn **Option 3 (Xem / Hiển thị 24 từ khôi phục)** trên menu `offline_main.sh` và nhập mật khẩu bảo mật ví để giải mã.
 
 ### Bước 2: Cấu hình API Blockfrost (Online)
 1.  Tạo tệp cấu hình `online/config.env` bằng cách sao chép từ tệp ví dụ mẫu:

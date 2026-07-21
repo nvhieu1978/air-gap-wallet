@@ -118,6 +118,101 @@ cleanup_gen() {
 }
 trap cleanup_gen EXIT
 
+# Hàm hiển thị cụm từ 24 từ bảo mật theo dạng bảng 4 từ/hàng, 3 hàng/trang để tránh lộ thông tin
+display_mnemonic_paged() {
+    local raw_phrase="$1"
+    local title="${2:-CỤM TỪ KHÔI PHỤC (MNEMONIC) BẢO MẬT}"
+
+    # Chuyển chuỗi thành mảng các từ
+    local words=()
+    read -r -a words <<< "$raw_phrase"
+
+    if [ ${#words[@]} -ne 24 ]; then
+        echo "Lỗi: Cụm từ khôi phục không đúng 24 từ (hiện tại có ${#words[@]} từ)."
+        return 1
+    fi
+
+    # Trang 1: Hàng 1 - 3 (Từ 1 - 12)
+    clear 2>/dev/null || echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    echo "========================================================"
+    echo "   $title - TRANG 1/2 (TỪ 1 - 12)"
+    echo "========================================================"
+    echo "  (Hệ thống chỉ hiển thị cùng lúc 3 hàng 4 từ để tránh bị lộ)"
+    echo "--------------------------------------------------------"
+    printf " %02d. %-12s %02d. %-12s %02d. %-12s %02d. %-12s\n" 1 "${words[0]}" 2 "${words[1]}" 3 "${words[2]}" 4 "${words[3]}"
+    printf " %02d. %-12s %02d. %-12s %02d. %-12s %02d. %-12s\n" 5 "${words[4]}" 6 "${words[5]}" 7 "${words[6]}" 8 "${words[7]}"
+    printf " %02d. %-12s %02d. %-12s %02d. %-12s %02d. %-12s\n" 9 "${words[8]}" 10 "${words[9]}" 11 "${words[10]}" 12 "${words[11]}"
+    echo "--------------------------------------------------------"
+    read -p "Nhấn ENTER để chuyển sang Trang 2 (Từ 13 - 24)..." dummy
+
+    # Trang 2: Hàng 4 - 6 (Từ 13 - 24)
+    clear 2>/dev/null || echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    echo "========================================================"
+    echo "   $title - TRANG 2/2 (TỪ 13 - 24)"
+    echo "========================================================"
+    echo "  (Hệ thống chỉ hiển thị cùng lúc 3 hàng 4 từ để tránh bị lộ)"
+    echo "--------------------------------------------------------"
+    printf " %02d. %-12s %02d. %-12s %02d. %-12s %02d. %-12s\n" 13 "${words[12]}" 14 "${words[13]}" 15 "${words[14]}" 16 "${words[15]}"
+    printf " %02d. %-12s %02d. %-12s %02d. %-12s %02d. %-12s\n" 17 "${words[16]}" 18 "${words[17]}" 19 "${words[18]}" 20 "${words[19]}"
+    printf " %02d. %-12s %02d. %-12s %02d. %-12s %02d. %-12s\n" 21 "${words[20]}" 22 "${words[21]}" 23 "${words[22]}" 24 "${words[23]}"
+    echo "--------------------------------------------------------"
+    read -p "Nhấn ENTER để hoàn tất và ẩn toàn bộ cụm từ bảo mật..." dummy
+
+    # Xóa màn hình và giải phóng biến chứa dữ liệu nhạy cảm khỏi bộ nhớ
+    clear 2>/dev/null || echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    unset words raw_phrase dummy
+    echo "Đã ẩn cụm từ khôi phục và dọn dẹp bộ nhớ an toàn."
+    return 0
+}
+
+# Hàm xem cụm từ 24 từ của ví đã có (yêu cầu mật khẩu giải mã)
+view_wallet_mnemonic() {
+    local target_wallet=""
+    if [ -n "$1" ]; then
+        target_wallet="$1"
+    else
+        read -p "Nhập tên ví cần xem cụm từ khôi phục (ví dụ: C2VN): " target_wallet
+        target_wallet=$(echo "$target_wallet" | tr -cd '[:alnum:]_-')
+    fi
+
+    if [ -z "$target_wallet" ]; then
+        echo "Lỗi: Tên ví không được để trống."
+        return 1
+    fi
+
+    local wallet_dir="./wallets/$target_wallet"
+    local enc_file="$wallet_dir/phrase.prv.enc"
+
+    if [ ! -f "$enc_file" ]; then
+        echo "Lỗi: Không tìm thấy tệp '$enc_file'. Vui lòng kiểm tra lại tên ví."
+        return 1
+    fi
+
+    read -s -p "Nhập mật khẩu bảo mật ví '$target_wallet' để giải mã: " password
+    echo ""
+
+    if [ -z "$password" ]; then
+        echo "Lỗi: Mật khẩu không được để trống."
+        return 1
+    fi
+
+    echo "Đang giải mã cụm từ khôi phục 24 từ..."
+    local decrypted_phrase=""
+    decrypted_phrase=$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in "$enc_file" -pass pass:"$password" 2>/dev/null)
+
+    if [ -z "$decrypted_phrase" ]; then
+        echo "Lỗi: Giải mã thất bại. Mật khẩu không chính xác hoặc tệp tin bị hỏng."
+        unset password
+        return 1
+    fi
+
+    display_mnemonic_paged "$decrypted_phrase" "VÍ $target_wallet - CỤM TỪ KHÔI PHỤC"
+    unset password decrypted_phrase
+    return 0
+}
+
+GEN_MODE=""
+
 # Giao diện chính sinh khóa
 while true; do
     echo "--------------------------------------------------------"
@@ -125,11 +220,13 @@ while true; do
     echo "Vui lòng chọn một phương án:"
     echo "1. Tạo ví mới hoàn toàn"
     echo "2. Khôi phục ví cũ từ cụm 24 từ bảo mật"
-    echo "3. Quay lại"
-    read -p "Nhập lựa chọn của bạn (1/2/3): " choice
+    echo "3. Xem 24 từ khôi phục của ví (Giải mã bằng mật khẩu)"
+    echo "4. Quay lại"
+    read -p "Nhập lựa chọn của bạn (1/2/3/4): " choice
 
     case $choice in
         1)
+            GEN_MODE="new"
             echo "Đang tạo cụm từ khôi phục 24 từ mới..."
             # Sinh cụm từ 24 từ lưu trữ trực tiếp vào RAM disk
             if [ "$KEY_GEN_TOOL" = "cardano-address" ]; then
@@ -141,6 +238,7 @@ while true; do
             break
             ;;
         2)
+            GEN_MODE="restore"
             # Nhập cụm từ khôi phục của người dùng (ẩn ký tự để bảo mật) và lưu trực tiếp vào RAM
             read -s -p "Nhập cụm 24 từ khôi phục (cách nhau bởi khoảng trắng): " phrase
             echo ""
@@ -150,6 +248,10 @@ while true; do
             break
             ;;
         3)
+            view_wallet_mnemonic "$WALLET_NAME"
+            echo ""
+            ;;
+        4)
             echo "Thoát trình tạo khóa..."
             exit 0
             ;;
@@ -271,6 +373,11 @@ openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -out "$WALLET_DIR/payment.sk
 openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -out "$WALLET_DIR/stake.skey.enc" -in "$TMP_DIR/stake.skey" -pass pass:"$password"
 openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -out "$WALLET_DIR/phrase.prv.enc" -in "$TMP_DIR/phrase.prv" -pass pass:"$password"
 
+NEW_PHRASE=""
+if [ "$GEN_MODE" = "new" ] && [ -f "$TMP_DIR/phrase.prv" ]; then
+    NEW_PHRASE=$(cat "$TMP_DIR/phrase.prv")
+fi
+
 # Dọn dẹp thư mục tạm chứa các khóa thô chưa mã hóa bằng shred
 cleanup_gen
 
@@ -291,3 +398,11 @@ echo "  - payment.skey.enc   : Khóa ký thanh toán ĐÃ MÃ HÓA (Riêng tư -
 echo "  - stake.skey.enc     : Khóa ký ủy quyền ĐÃ MÃ HÓA (Riêng tư - Bảo mật cao)"
 echo "  - phrase.prv.enc     : Cụm 24 từ khôi phục ĐÃ MÃ HÓA (Riêng tư - Bảo mật cao)"
 echo "--------------------------------------------------------"
+
+if [ "$GEN_MODE" = "new" ] && [ -n "$NEW_PHRASE" ]; then
+    echo ""
+    echo "LƯU Ý BẢO MẬT: Cụm 24 từ khôi phục của ví vừa được tạo thành công."
+    read -p "Vui lòng chuẩn bị giấy/bút và nhấn ENTER để bắt đầu xem cụm từ khôi phục..." dummy_enter
+    display_mnemonic_paged "$NEW_PHRASE" "VÍ $WALLET_NAME - CỤM TỪ KHÔI PHỤC MỚI TẠO"
+    unset NEW_PHRASE dummy_enter
+fi

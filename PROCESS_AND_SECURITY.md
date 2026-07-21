@@ -96,6 +96,10 @@ Khi xóa các tệp nhạy cảm (sau khi tạo khóa hoặc ký xong giao dịc
 *   Sử dụng lệnh **`shred -u`**: Tiến hành ghi đè dữ liệu rác ngẫu nhiên đè lên vùng nhớ chứa khóa nhiều lần trước khi xóa bỏ liên kết tệp. Việc này được thực hiện trên RAM (hoặc ổ cứng dự phòng) để xóa sạch mọi vết tích nhị phân.
 *   Bảo vệ an toàn bằng cấu trúc `trap` trong Bash để tự động kích hoạt hàm dọn dẹp và hủy khóa thô ngay cả khi người dùng đột ngột tắt script hoặc chương trình gặp sự cố (Crash) bất ngờ.
 
+### D. Cơ Chế Hiển Thị Cụm Từ Khôi Phục Bảo Mật (Paged Mnemonic Display)
+*   **Hiển thị phân trang bảo vệ rò rỉ hình ảnh**: Khi người dùng tạo mới ví hoặc yêu cầu xem lại 24 từ khôi phục từ tệp `phrase.prv.enc` (sau khi xác thực mật khẩu giải mã thành công), cụm 24 từ được hiển thị dạng bảng chuẩn 4 từ/hàng và chỉ hiển thị tối đa 3 hàng (12 từ) trong 1 trang. Người dùng cần nhấn ENTER để chuyển sang 12 từ tiếp theo. Điều này ngăn ngừa việc màn hình hiển thị toàn bộ 24 từ cùng một lúc, giảm thiểu nguy cơ lộ dữ liệu qua camera giám sát hoặc chụp màn hình ngẫu nhiên.
+*   **Xóa bộ nhớ và màn hình tức thì**: Sau khi xem xong, toàn bộ biến lưu trữ chuỗi cụm từ trên bộ nhớ RAM được `unset` giải phóng hoàn toàn và lệnh xóa màn hình (`clear`) được gọi tự động để bảo vệ tuyệt đối.
+
 
 ---
 

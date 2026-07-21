@@ -55,6 +55,99 @@ cleanup() {
 # Đăng ký hàm dọn dẹp khi chương trình kết thúc (nhấn Ctrl+C hoặc tắt script)
 trap cleanup EXIT
 
+# Hàm hiển thị cụm từ 24 từ bảo mật theo dạng bảng 4 từ/hàng, 3 hàng/trang để tránh lộ thông tin
+display_mnemonic_paged() {
+    local raw_phrase="$1"
+    local title="${2:-CỤM TỪ KHÔI PHỤC (MNEMONIC) BẢO MẬT}"
+
+    # Chuyển chuỗi thành mảng các từ
+    local words=()
+    read -r -a words <<< "$raw_phrase"
+
+    if [ ${#words[@]} -ne 24 ]; then
+        echo "Lỗi: Cụm từ khôi phục không đúng 24 từ (hiện tại có ${#words[@]} từ)."
+        return 1
+    fi
+
+    # Trang 1: Hàng 1 - 3 (Từ 1 - 12)
+    clear 2>/dev/null || echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    echo "========================================================"
+    echo "   $title - TRANG 1/2 (TỪ 1 - 12)"
+    echo "========================================================"
+    echo "  (Hệ thống chỉ hiển thị cùng lúc 3 hàng 4 từ để tránh bị lộ)"
+    echo "--------------------------------------------------------"
+    printf " %02d. %-12s %02d. %-12s %02d. %-12s %02d. %-12s\n" 1 "${words[0]}" 2 "${words[1]}" 3 "${words[2]}" 4 "${words[3]}"
+    printf " %02d. %-12s %02d. %-12s %02d. %-12s %02d. %-12s\n" 5 "${words[4]}" 6 "${words[5]}" 7 "${words[6]}" 8 "${words[7]}"
+    printf " %02d. %-12s %02d. %-12s %02d. %-12s %02d. %-12s\n" 9 "${words[8]}" 10 "${words[9]}" 11 "${words[10]}" 12 "${words[11]}"
+    echo "--------------------------------------------------------"
+    read -p "Nhấn ENTER để chuyển sang Trang 2 (Từ 13 - 24)..." dummy
+
+    # Trang 2: Hàng 4 - 6 (Từ 13 - 24)
+    clear 2>/dev/null || echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    echo "========================================================"
+    echo "   $title - TRANG 2/2 (TỪ 13 - 24)"
+    echo "========================================================"
+    echo "  (Hệ thống chỉ hiển thị cùng lúc 3 hàng 4 từ để tránh bị lộ)"
+    echo "--------------------------------------------------------"
+    printf " %02d. %-12s %02d. %-12s %02d. %-12s %02d. %-12s\n" 13 "${words[12]}" 14 "${words[13]}" 15 "${words[14]}" 16 "${words[15]}"
+    printf " %02d. %-12s %02d. %-12s %02d. %-12s %02d. %-12s\n" 17 "${words[16]}" 18 "${words[17]}" 19 "${words[18]}" 20 "${words[19]}"
+    printf " %02d. %-12s %02d. %-12s %02d. %-12s %02d. %-12s\n" 21 "${words[20]}" 22 "${words[21]}" 23 "${words[22]}" 24 "${words[23]}"
+    echo "--------------------------------------------------------"
+    read -p "Nhấn ENTER để hoàn tất và ẩn toàn bộ cụm từ bảo mật..." dummy
+
+    # Xóa màn hình và giải phóng biến chứa dữ liệu nhạy cảm khỏi bộ nhớ
+    clear 2>/dev/null || echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    unset words raw_phrase dummy
+    echo "Đã ẩn cụm từ khôi phục và dọn dẹp bộ nhớ an toàn."
+    return 0
+}
+
+# Hàm xem cụm từ 24 từ của ví đã có (yêu cầu mật khẩu giải mã)
+view_wallet_mnemonic() {
+    local target_wallet=""
+    if [ -n "$1" ]; then
+        target_wallet="$1"
+    else
+        read -p "Nhập tên ví cần xem cụm từ khôi phục (ví dụ: C2VN): " target_wallet
+        target_wallet=$(echo "$target_wallet" | tr -cd '[:alnum:]_-')
+    fi
+
+    if [ -z "$target_wallet" ]; then
+        echo "Lỗi: Tên ví không được để trống."
+        return 1
+    fi
+
+    local wallet_dir="./wallets/$target_wallet"
+    local enc_file="$wallet_dir/phrase.prv.enc"
+
+    if [ ! -f "$enc_file" ]; then
+        echo "Lỗi: Không tìm thấy tệp '$enc_file'. Vui lòng kiểm tra lại tên ví."
+        return 1
+    fi
+
+    read -s -p "Nhập mật khẩu bảo mật ví '$target_wallet' để giải mã: " password
+    echo ""
+
+    if [ -z "$password" ]; then
+        echo "Lỗi: Mật khẩu không được để trống."
+        return 1
+    fi
+
+    echo "Đang giải mã cụm từ khôi phục 24 từ..."
+    local decrypted_phrase=""
+    decrypted_phrase=$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in "$enc_file" -pass pass:"$password" 2>/dev/null)
+
+    if [ -z "$decrypted_phrase" ]; then
+        echo "Lỗi: Giải mã thất bại. Mật khẩu không chính xác hoặc tệp tin bị hỏng."
+        unset password
+        return 1
+    fi
+
+    display_mnemonic_paged "$decrypted_phrase" "VÍ $target_wallet - CỤM TỪ KHÔI PHỤC"
+    unset password decrypted_phrase
+    return 0
+}
+
 # Hàm đọc giao dịch thô từ phía người dùng cung cấp
 get_raw_tx() {
     local wallet_dir="${1:-.}"
@@ -341,8 +434,9 @@ while true; do
     echo "========================================================"
     echo "1. Tạo mới / Khôi phục ví (Mã hóa bảo mật)"
     echo "2. Ký giao dịch ngoại tuyến"
-    echo "3. Thoát"
-    read -p "Nhập lựa chọn của bạn (1-3): " choice
+    echo "3. Xem / Hiển thị 24 từ khôi phục của ví (Mã hóa bảo mật)"
+    echo "4. Thoát"
+    read -p "Nhập lựa chọn của bạn (1-4): " choice
 
     case $choice in
         1)
@@ -352,6 +446,9 @@ while true; do
             sign_transaction
             ;;
         3)
+            view_wallet_mnemonic
+            ;;
+        4)
             echo "Đang thoát chương trình..."
             exit 0
             ;;

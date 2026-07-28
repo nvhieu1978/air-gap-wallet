@@ -69,13 +69,12 @@ get_envelope_type_signed() {
 
 # Hàm phụ trợ để lấy địa chỉ người gửi (tự động nhận diện từ ví offline hoặc nhập tay)
 get_sender_address() {
-    local __resultvar=$1
-    local prompt_msg="$2"
+    local prompt_msg="$1"
     local address=""
     local wallet_name=""
     local use_offline=""
     
-    read -p "Nhập tên ví Cardano từ máy offline (để trống nếu nhập địa chỉ thủ công): " wallet_name
+    read -p "Nhập tên ví Cardano từ máy offline (để trống nếu nhập địa chỉ thủ công): " wallet_name >&2
     wallet_name=$(echo "$wallet_name" | tr -cd '[:alnum:]_-')
     
     # Thiết lập biến toàn cục cho tên ví đã chọn
@@ -90,29 +89,31 @@ get_sender_address() {
             echo "Sử dụng địa chỉ ví '$wallet_name': $address" >&2
         else
             echo "Không tìm thấy ví '$wallet_name' trong thư mục offline." >&2
-            read -p "$prompt_msg: " address
+            read -p "$prompt_msg: " address >&2
         fi
     else
         if [ -f "../offline/payment.addr" ]; then
             local def_addr
             def_addr=$(cat ../offline/payment.addr)
-            read -p "Phát hiện địa chỉ mặc định ($def_addr). Sử dụng địa chỉ này? [Y/n]: " use_offline
+            read -p "Phát hiện địa chỉ mặc định ($def_addr). Sử dụng địa chỉ này? [Y/n]: " use_offline >&2
             if [[ "$use_offline" =~ ^[nN][oO]?$ ]]; then
-                read -p "$prompt_msg: " address
+                read -p "$prompt_msg: " address >&2
             else
                 address="$def_addr"
             fi
         else
-            read -p "$prompt_msg: " address
+            read -p "$prompt_msg: " address >&2
         fi
     fi
-    eval $__resultvar="'$address'"
+    # Loại bỏ khoảng trắng hoặc kí tự xuống dòng thừa
+    address=$(echo "$address" | tr -d '[:space:]')
+    echo "$address"
 }
 
 # 1. Truy vấn UTXO và tính toán số dư của địa chỉ ví
 check_balance() {
-    local address=""
-    get_sender_address address "Nhập địa chỉ ví Cardano"
+    local address
+    address=$(get_sender_address "Nhập địa chỉ ví Cardano")
     
     if [ -z "$address" ]; then
         echo "Lỗi: Địa chỉ ví không được bỏ trống."
@@ -148,9 +149,9 @@ check_balance() {
         total_lovelace=$((total_lovelace + lovelace))
     done <<< "$sorted_utxos"
 
-    # Đổi đơn vị Lovelace sang ADA (chia cho 1.000.000) thông qua Python để tránh sai số thập phân
+    # Đổi đơn vị Lovelace sang ADA bằng awk thuần (không phụ thuộc vào python3)
     local total_ada
-    total_ada=$(python3 -c "print(f'{${total_lovelace} / 1000000:.6f}')")
+    total_ada=$(awk -v lovelace="$total_lovelace" 'BEGIN { printf "%.6f", lovelace / 1000000 }')
 
     echo "--------------------------------------------------------"
     echo "Địa chỉ: $address"
@@ -165,8 +166,8 @@ check_balance() {
 build_tx() {
     check_cli || return 1
 
-    local sender_address=""
-    get_sender_address sender_address "Nhập địa chỉ người gửi"
+    local sender_address
+    sender_address=$(get_sender_address "Nhập địa chỉ người gửi")
 
     if [ -z "$sender_address" ]; then
         echo "Lỗi: Địa chỉ người gửi không được để trống."
@@ -217,6 +218,7 @@ build_tx() {
     local utxo_num
     local has_invalid=false
     local selected_info=""
+    local selected_utxo_count=0
 
     for utxo_num in $utxo_input; do
         if ! [[ "$utxo_num" =~ ^[0-9]+$ ]] || [ "$utxo_num" -lt 1 ] || [ "$utxo_num" -gt "$total_utxos" ]; then
@@ -235,15 +237,16 @@ build_tx() {
 
         tx_in_args+=("--tx-in" "$utxo_in")
         input_lovelace=$((input_lovelace + utxo_lovelace))
+        selected_utxo_count=$((selected_utxo_count + 1))
         selected_info="$selected_info\n  + $utxo_in ($((utxo_lovelace / 1000000)) ADA)"
     done
 
-    if [ "$has_invalid" = true ] || [ ${#tx_in_args[@]} -eq 0 ]; then
+    if [ "$has_invalid" = true ] || [ $selected_utxo_count -eq 0 ]; then
         echo "Lỗi: Không có UTXO hợp lệ nào được chọn."
         return 1
     fi
 
-    echo -e "Đã chọn ${#tx_in_args[@]} UTXO làm đầu vào (Tổng cộng $((input_lovelace / 1000000)) ADA):$selected_info"
+    echo -e "Đã chọn $selected_utxo_count UTXO làm đầu vào (Tổng cộng $((input_lovelace / 1000000)) ADA):$selected_info"
 
     read -p "Nhập địa chỉ nhận tiền (Destination Address): " tx_out
     if [ -z "$tx_out" ]; then
@@ -253,8 +256,8 @@ build_tx() {
 
     read -p "Nhập số ADA muốn gửi đi: " tx_amount_ada
     local tx_amount_lovelace
-    # Sử dụng Python để chuyển đổi chính xác từ ADA (thập phân) sang Lovelace (nguyên)
-    tx_amount_lovelace=$(python3 -c "print(int(float('$tx_amount_ada') * 1000000))" 2>/dev/null)
+    # Sử dụng awk để chuyển đổi chính xác từ ADA (thập phân) sang Lovelace (nguyên)
+    tx_amount_lovelace=$(awk -v ada="$tx_amount_ada" 'BEGIN { printf "%.0f", ada * 1000000 }' 2>/dev/null)
 
     if [ -z "$tx_amount_lovelace" ] || [ $tx_amount_lovelace -le 0 ]; then
         echo "Lỗi: Số lượng ADA không hợp lệ."
@@ -618,6 +621,7 @@ delegate_tx() {
     local utxo_num
     local has_invalid=false
     local selected_info=""
+    local selected_utxo_count=0
 
     for utxo_num in $utxo_input; do
         if ! [[ "$utxo_num" =~ ^[0-9]+$ ]] || [ "$utxo_num" -lt 1 ] || [ "$utxo_num" -gt "$total_utxos" ]; then
@@ -636,10 +640,11 @@ delegate_tx() {
 
         tx_in_args+=("--tx-in" "$utxo_in")
         input_lovelace=$((input_lovelace + utxo_lovelace))
+        selected_utxo_count=$((selected_utxo_count + 1))
         selected_info="$selected_info\n  + $utxo_in ($((utxo_lovelace / 1000000)) ADA)"
     done
 
-    if [ "$has_invalid" = true ] || [ ${#tx_in_args[@]} -eq 0 ]; then
+    if [ "$has_invalid" = true ] || [ $selected_utxo_count -eq 0 ]; then
         echo "Lỗi: Không có UTXO hợp lệ nào được chọn."
         rm -f "$cert_file"
         return 1

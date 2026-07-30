@@ -407,7 +407,7 @@ build_tx() {
             echo "--------------------------------------------------------"
             echo "MÃ QR GIAO DỊCH THÔ (Quét mã này bằng Máy Offline để ký):"
             qrencode -t ansiutf8 "TxBodyConway:$cbor_hex"
-            qrencode -o "$wallet_out_dir/tx_raw_qr.png" "TxBodyConway:$cbor_hex"
+            qrencode -o "$wallet_out_dir/tx_raw_qr.png" -s 1 -m 1 "TxBodyConway:$cbor_hex"
             echo "File ảnh QR giao dịch thô được lưu tại: $wallet_out_dir/tx_raw_qr.png"
         else
             echo "Cảnh báo: Không tìm thấy 'qrencode'. Bỏ qua vẽ QR trên Terminal."
@@ -754,7 +754,7 @@ delegate_tx() {
         echo "--------------------------------------------------------"
         echo "MÃ QR GIAO DỊCH ỦY THÁC THÔ (Quét mã này bằng Máy Offline để ký):"
         qrencode -t ansiutf8 "TxBodyConwayDelegation:$cbor_hex"
-        qrencode -o "$wallet_dir/tx_raw_qr.png" "TxBodyConwayDelegation:$cbor_hex"
+        qrencode -o "$wallet_dir/tx_raw_qr.png" -s 1 -m 1 "TxBodyConwayDelegation:$cbor_hex"
         echo "File ảnh QR giao dịch thô được lưu tại: $wallet_dir/tx_raw_qr.png"
     else
         echo "Cảnh báo: Không tìm thấy 'qrencode'. Bỏ qua vẽ QR trên Terminal."

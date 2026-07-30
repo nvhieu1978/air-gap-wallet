@@ -410,7 +410,7 @@ EOF
             echo "--------------------------------------------------------"
             echo "MÃ QR GIAO DỊCH ĐÃ KÝ (Dùng máy Online quét mã này để gửi):"
             qrencode -t ansiutf8 "TxConway:$signed_cbor_hex"
-            qrencode -o "$wallet_dir/tx_signed_qr.png" "TxConway:$signed_cbor_hex"
+            qrencode -o "$wallet_dir/tx_signed_qr.png" -s 1 -m 1 "TxConway:$signed_cbor_hex"
             echo "Đã lưu ảnh QR đã ký tại: $wallet_dir/tx_signed_qr.png"
         else
             echo "Cảnh báo: Không tìm thấy 'qrencode'. Bỏ qua hiển thị QR trên terminal."

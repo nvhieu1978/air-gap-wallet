@@ -91,18 +91,24 @@ done
 WALLET_DIR="./wallets/$WALLET_NAME"
 mkdir -p "$WALLET_DIR"
 
-# Khởi tạo thư mục tạm thời trong RAM (sử dụng /dev/shm là tmpfs chạy hoàn toàn trên RAM)
-# Nếu không có /dev/shm, sẽ dùng thư mục tạm thời trong thư mục hiện hành.
+# Khởi tạo thư mục tạm thời trong RAM (sử dụng /dev/shm) hoặc /tmp hoặc thư mục hiện tại nếu không đủ quyền
+TMP_DIR=""
 if [ -d "/dev/shm" ] && [ -w "/dev/shm" ]; then
-    TMP_DIR="/dev/shm/cardano-airgap-gen-$$"
-    mkdir -p "$TMP_DIR"
-    chmod 700 "$TMP_DIR"
-    echo "Phát hiện RAM Disk khả dụng. Tất cả khóa thô chưa mã hóa sẽ được xử lý trên RAM."
-else
-    TMP_DIR="./tmp-keys-$$"
-    mkdir -p "$TMP_DIR"
-    echo "Cảnh báo: Không thể ghi vào RAM Disk (/dev/shm). Sử dụng thư mục tạm trên đĩa cứng."
+    TMP_DIR=$(mktemp -d /dev/shm/cardano-airgap-gen-XXXXXX 2>/dev/null)
 fi
+if [ -z "$TMP_DIR" ] || [ ! -d "$TMP_DIR" ]; then
+    if [ -d "/tmp" ] && [ -w "/tmp" ]; then
+        TMP_DIR=$(mktemp -d /tmp/cardano-airgap-gen-XXXXXX 2>/dev/null)
+    fi
+fi
+if [ -z "$TMP_DIR" ] || [ ! -d "$TMP_DIR" ]; then
+    TMP_DIR="./tmp-keys-$$"
+    mkdir -p "$TMP_DIR" 2>/dev/null
+    echo "Cảnh báo: Không thể ghi vào RAM Disk (/dev/shm) hoặc /tmp. Sử dụng thư mục tạm tại thư mục hiện hành."
+else
+    echo "Tất cả khóa thô chưa mã hóa sẽ được xử lý tại thư mục tạm an toàn ($TMP_DIR)."
+fi
+chmod 700 "$TMP_DIR" 2>/dev/null
 
 # Đăng ký dọn dẹp thư mục tạm trên RAM/Disk khi kịch bản dừng đột ngột
 cleanup_gen() {

@@ -15,15 +15,21 @@ else
     NETWORK_PARAM="--testnet-magic 2"
 fi
 
-# Thiết lập thư mục làm việc tạm thời trong RAM (sử dụng /dev/shm) hoặc thư mục hiện tại nếu không khả dụng
+# Thiết lập thư mục làm việc tạm thời trong RAM (sử dụng /dev/shm) hoặc /tmp hoặc thư mục hiện tại nếu không đủ quyền
+TMP_DIR=""
 if [ -d "/dev/shm" ] && [ -w "/dev/shm" ]; then
-    TMP_DIR="/dev/shm/cardano-airgap-sign-$$"
-    mkdir -p "$TMP_DIR"
-    chmod 700 "$TMP_DIR"
-else
-    TMP_DIR="./tmp-keys-$$"
-    mkdir -p "$TMP_DIR"
+    TMP_DIR=$(mktemp -d /dev/shm/cardano-airgap-sign-XXXXXX 2>/dev/null)
 fi
+if [ -z "$TMP_DIR" ] || [ ! -d "$TMP_DIR" ]; then
+    if [ -d "/tmp" ] && [ -w "/tmp" ]; then
+        TMP_DIR=$(mktemp -d /tmp/cardano-airgap-sign-XXXXXX 2>/dev/null)
+    fi
+fi
+if [ -z "$TMP_DIR" ] || [ ! -d "$TMP_DIR" ]; then
+    TMP_DIR="./tmp-keys-$$"
+    mkdir -p "$TMP_DIR" 2>/dev/null
+fi
+chmod 700 "$TMP_DIR" 2>/dev/null
 TMP_KEY_PATH="$TMP_DIR/payment.skey.tmp"
 
 # Xác định thư mục dự án
@@ -281,9 +287,23 @@ sign_transaction() {
         return 1
     fi
 
-    # Đảm bảo thư mục tạm thời trong RAM tồn tại
-    mkdir -p "$TMP_DIR"
-    chmod 700 "$TMP_DIR"
+    # Đảm bảo thư mục tạm thời tồn tại và có quyền ghi
+    if [ -z "$TMP_DIR" ] || [ ! -d "$TMP_DIR" ] || [ ! -w "$TMP_DIR" ]; then
+        if [ -d "/dev/shm" ] && [ -w "/dev/shm" ]; then
+            TMP_DIR=$(mktemp -d /dev/shm/cardano-airgap-sign-XXXXXX 2>/dev/null)
+        fi
+        if [ -z "$TMP_DIR" ] || [ ! -d "$TMP_DIR" ]; then
+            if [ -d "/tmp" ] && [ -w "/tmp" ]; then
+                TMP_DIR=$(mktemp -d /tmp/cardano-airgap-sign-XXXXXX 2>/dev/null)
+            fi
+        fi
+        if [ -z "$TMP_DIR" ] || [ ! -d "$TMP_DIR" ]; then
+            TMP_DIR="./tmp-keys-$$"
+            mkdir -p "$TMP_DIR" 2>/dev/null
+        fi
+        chmod 700 "$TMP_DIR" 2>/dev/null
+        TMP_KEY_PATH="$TMP_DIR/payment.skey.tmp"
+    fi
 
     local env_type
     env_type=$(get_envelope_type)

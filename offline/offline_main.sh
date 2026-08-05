@@ -341,11 +341,9 @@ EOF
 
     echo "Đang giải mã khóa riêng tư thanh toán..."
     # Giải mã trực tiếp ra RAM Disk
-    openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in "$skey_enc_path" -out "$TMP_KEY_PATH" -pass pass:"$password" 2>/dev/null
-    
-    # Kiểm tra xem việc giải mã có thành công không
-    if [ ! -f "$TMP_KEY_PATH" ] || [ ! -s "$TMP_KEY_PATH" ]; then
-        echo "Lỗi: Giải mã khóa riêng tư thất bại (Mật khẩu sai hoặc file bị lỗi)."
+    rm -f "$TMP_KEY_PATH"
+    if ! openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in "$skey_enc_path" -out "$TMP_KEY_PATH" -pass pass:"$password" 2>/dev/null || [ ! -s "$TMP_KEY_PATH" ] || ! grep -q '"cborHex"' "$TMP_KEY_PATH" 2>/dev/null; then
+        echo "Lỗi: Giải mã khóa riêng tư thất bại (Mật khẩu không chính xác hoặc tệp '$skey_enc_path' bị hỏng)."
         cleanup
         return 1
     fi
@@ -372,15 +370,14 @@ EOF
 
         if [ "$need_stake_sign" = true ]; then
             echo "Đang giải mã khóa riêng tư stake..."
-            openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in "$stake_enc_path" -out "$TMP_STAKE_KEY_PATH" -pass pass:"$password" 2>/dev/null
-            if [ -f "$TMP_STAKE_KEY_PATH" ] && [ -s "$TMP_STAKE_KEY_PATH" ]; then
-                sign_args+=("--signing-key-file" "$TMP_STAKE_KEY_PATH")
-                echo "Đã giải mã khóa riêng tư stake thành công."
-            else
-                echo "Lỗi: Giải mã khóa riêng tư stake thất bại hoặc mật khẩu không hợp lệ."
+            rm -f "$TMP_STAKE_KEY_PATH"
+            if ! openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in "$stake_enc_path" -out "$TMP_STAKE_KEY_PATH" -pass pass:"$password" 2>/dev/null || [ ! -s "$TMP_STAKE_KEY_PATH" ] || ! grep -q '"cborHex"' "$TMP_STAKE_KEY_PATH" 2>/dev/null; then
+                echo "Lỗi: Giải mã khóa riêng tư stake thất bại (Mật khẩu không chính xác hoặc tệp '$stake_enc_path' bị hỏng)."
                 cleanup
                 return 1
             fi
+            sign_args+=("--signing-key-file" "$TMP_STAKE_KEY_PATH")
+            echo "Đã giải mã khóa riêng tư stake thành công."
         fi
     fi
 
@@ -409,8 +406,8 @@ EOF
         if command -v qrencode &> /dev/null; then
             echo "--------------------------------------------------------"
             echo "MÃ QR GIAO DỊCH ĐÃ KÝ (Dùng máy Online quét mã này để gửi):"
-            qrencode -t ansiutf8 "TxConway:$signed_cbor_hex"
-            qrencode -o "$wallet_dir/tx_signed_qr.png" -s 1 -m 1 "TxConway:$signed_cbor_hex"
+            qrencode -t ansiutf8 -m 1 "TxConway:$signed_cbor_hex"
+            qrencode -o "$wallet_dir/tx_signed_qr.png" "TxConway:$signed_cbor_hex"
             echo "Đã lưu ảnh QR đã ký tại: $wallet_dir/tx_signed_qr.png"
         else
             echo "Cảnh báo: Không tìm thấy 'qrencode'. Bỏ qua hiển thị QR trên terminal."
